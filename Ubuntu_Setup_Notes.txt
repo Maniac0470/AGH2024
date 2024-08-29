@@ -1,0 +1,27 @@
+Turn Off RGB on MOBO:
+sudo /home/aheck/msi-rgb/target/release/msi-rgb -x 00000000 00000000 00000000
+
+Temps/sensors:modprobe nct6775
+
+bluetooth setup:apt-get install sysfsutils
+vim /etc/sysfs.conf echo '/module/bluetooth/parameters/disable_ertm=1' >> /etc/sysfs.conf
+xpadneo required for XBOX One S **wireless** controller:    https://github.com/atar-axis/xpadneo
+apt-get install g810-ledgreenKeyboard.sh#!/bin/bash
+g512-led -dv 046d -dp c342 -tuk 1 -a 00FF00
+
+
+g512-led -dv 046d -dp c342 -tuk 1 -pp < colors
+
+xsane/scanner config:follow instructions from Brother website (MFC-J410W) then:sudo ln -sfr /usr/lib64/libbrscandec* /usr/lib/x86_64-linux-gnusudo ln -sfr /usr/lib64/sane/libsane-brother* /usr/lib/x86_64-linux-gnu/saneRDP:remmina
+DS3 save file:/home/alex/.steam/steam/steamapps/compatdata/374320/pfx/drive_c/users/steamuser/Application Data/DarkSoulsIII
+XPADNEO for controller to work
+Surfshark VPN
+WebTorrent
+Sound Switcher
+Keepass XC
+NVidia proprietary drivers
+Steam
+Wine Update
+Rclone
+CITRIX ICACLIENT NEEDS:1. Install latest version of ICAclient for Linux from Citrix site directly2. modify the wfclient.ini (/home/aheck/.ICAclient/wfclient.ini) and add "AllowAudioInput=True"3.  *****IMPORTANT**** run ldd /opt/Citrix/ICAclient/utils/Hdx and check for missing dependencies        3a. MUST LINK ibunwind.so.1 -> libunwind.so.8.0.1  in  /usr/lib/x86_64-linux-gnu4. *NEW** - You might just need to run /opt/Citrix/ICAClient/util/hdxcheck.sh and install the stuff there (libc++1 and others)
+just in case I fuck it up again:https://www.reddit.com/r/pop_os/comments/r1ofn7/how_do_you_downgrade_nvidia_driver/
