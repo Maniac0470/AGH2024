@@ -1,14 +1,13 @@
-param (
-    [string]$SamAccountName,
-    [string]$FirstName,
-    [string]$LastName,
-    [string]$Description,
-    [string]$UserPrincipalName,
-    [string]$PlainTextPassword
-)
+# Prompt for user details
+$SamAccountName = Read-Host "Enter the SamAccountName (username)"
+$FirstName = Read-Host "Enter the First Name"
+$LastName = Read-Host "Enter the Last Name"
+$Description = Read-Host "Enter the Description"
+$UserPrincipalName = Read-Host "Enter the UserPrincipalName (e.g., username@DS.local)"
+$PlainTextPassword = Read-Host "Enter the Password" -AsSecureString
 
-# Convert the plaintext password to a secure string
-$SecurePassword = ConvertTo-SecureString $PlainTextPassword -AsPlainText -Force
+# Convert the SecureString password back to plaintext for use
+$SecurePassword = $PlainTextPassword
 
 # Construct the distinguished name for the new user
 $DistinguishedName = "CN=$FirstName $LastName,OU=Users,DC=DS,DC=local"
