@@ -1,4 +1,4 @@
-# Prompt for user details
+# Prompt for user details because people are idiots
 $SamAccountName = Read-Host "Enter the SamAccountName (username)"
 $FirstName = Read-Host "Enter the First Name"
 $LastName = Read-Host "Enter the Last Name"
