@@ -1,26 +1,12 @@
+## CONFIGURATION SECTION ##########################
+
+# Define root folders to clean up
 $RootFolders = @('C:\TestDelete\Folder1','C:\TestDelete\Folder2','C:\TestDelete\Folder3','C:\TestDelete\Folder4','C:\TestDelete\Folder5','C:\TestDelete\Folder6','C:\TestDelete\Folder7','C:\TestDelete\Folder8','C:\TestDelete\Folder9','C:\TestDelete\Folder10','C:\TestDelete\Folder11','C:\TestDelete\Folder12','C:\TestDelete\Folder13','C:\TestDelete\Folder14','C:\TestDelete\Folder15','C:\TestDelete\Folder16','C:\TestDelete\Folder17')
-$DaysOld = 60  
-$CutoffDate = (Get-Date).AddDays(-$DaysOld)
+$DaysOld = 60                                   # Define age threshold for deletion
+$CutoffDate = (Get-Date).AddDays(-$DaysOld)     # Calculate cutoff date
+$MaxThreads = 8                                 # Define maximum parallel threads
 
-#Get-ChildItem $RootFolders -File -Recurse -Force | Out-Null
-#$rootFolders | ForEach-Object { Get-ChildItem $_ | where {$_.LastWriteTime -lt (date).AddDays(-60)#| Remove-Item -Force -Recurse
-
-<#
-Measure-Command{
- $rootFolders | ForEach-Object { Get-ChildItem $_ | Remove-Item -Force -Recurse }
- }
-#>
-
-<#
-foreach ($folder in $rootFolders) {
-    write-host "Creating 20K files in each folder, hang in there" -ForegroungColor Cyan
-    cmd /c "for /L %i in (1,1,20000) do >nul copy nul "$folder\TestFile_%i.bin""
-    }
-
-#>
-
-
-$MaxThreads = 8   # one thread per folder = maximum parallelism for only 17 items
+## END CONFIGURATION SECTION ##########################
 
 # Create runspace pool
 $RunspacePool = [runspacefactory]::CreateRunspacePool(1, $MaxThreads)
