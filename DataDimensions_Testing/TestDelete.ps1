@@ -1,4 +1,7 @@
 $RootFolders = @('C:\TestDelete\Folder1','C:\TestDelete\Folder2','C:\TestDelete\Folder3','C:\TestDelete\Folder4','C:\TestDelete\Folder5','C:\TestDelete\Folder6','C:\TestDelete\Folder7','C:\TestDelete\Folder8','C:\TestDelete\Folder9','C:\TestDelete\Folder10','C:\TestDelete\Folder11','C:\TestDelete\Folder12','C:\TestDelete\Folder13','C:\TestDelete\Folder14','C:\TestDelete\Folder15','C:\TestDelete\Folder16','C:\TestDelete\Folder17')
+$DaysOld = 60  
+$CutoffDate = (Get-Date).AddDays(-$DaysOld)
+
 #Get-ChildItem $RootFolders -File -Recurse -Force | Out-Null
 #$rootFolders | ForEach-Object { Get-ChildItem $_ | where {$_.LastWriteTime -lt (date).AddDays(-60)#| Remove-Item -Force -Recurse
 
@@ -17,7 +20,7 @@ foreach ($folder in $rootFolders) {
 #>
 
 
-$MaxThreads = 17   # one thread per folder = maximum parallelism for only 17 items
+$MaxThreads = 8   # one thread per folder = maximum parallelism for only 17 items
 
 # Create runspace pool
 $RunspacePool = [runspacefactory]::CreateRunspacePool(1, $MaxThreads)
@@ -30,13 +33,15 @@ foreach ($Root in $RootFolders) {
     $PowerShell.RunspacePool = $RunspacePool
 
     [void]$PowerShell.AddScript({
-        param($Path)
+        param($Path, $CutoffDate)
 
-        Get-ChildItem -Path $Path -File -Recurse -Force -ErrorAction SilentlyContinue |
-            Remove-Item -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path $Path -File -Recurse -Force |
+        Where-Object { $_.LastWriteTime -lt $CutoffDate }| 
+        Remove-Item -Force
     })
 
     [void]$PowerShell.AddArgument($Root)
+    [void]$PowerShell.AddArgument($CutoffDate)
 
     $Jobs += [PSCustomObject]@{
         Path       = $Root
