@@ -1,0 +1,146 @@
+# Large-Scale File Cleanup Script
+# Deletes files older than 60 days while managing system resources
+# Allows for WhatIf mode for safe testing
+
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$TargetPath,
+    
+    [int]$DaysOld = 60,
+    [int]$BatchSize = 1000,
+    [int]$ThrottleLimit = 8,
+    [int]$DelayBetweenBatches = 2,
+    [switch]$WhatIf
+)
+
+# Configuration
+$cutoffDate = (Get-Date).AddDays(-$DaysOld)
+$logPath = Join-Path $env:TEMP "FileCleanup_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+
+function Write-Log {
+    param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logMessage = "[$timestamp] $Message"
+    Write-Host $logMessage
+    Add-Content -Path $logPath -Value $logMessage
+}
+
+function Get-ProcessPriority {
+    $process = Get-Process -Id $PID
+    $process.PriorityClass = "BelowNormal"
+    Write-Log "Set process priority to BelowNormal"
+}
+
+Write-Log "=== File Cleanup Started ==="
+Write-Log "Target Path: $TargetPath"
+Write-Log "Cutoff Date: $cutoffDate"
+Write-Log "Batch Size: $BatchSize"
+Write-Log "Throttle Limit: $ThrottleLimit threads"
+Write-Log "WhatIf Mode: $WhatIf"
+
+# Set lower process priority to reduce resource consumption
+Get-ProcessPriority
+
+# Validate path
+if (-not (Test-Path $TargetPath)) {
+    Write-Log "ERROR: Path does not exist: $TargetPath"
+    exit 1
+}
+
+# Initialize counters
+$totalProcessed = 0
+$totalDeleted = 0
+$totalErrors = 0
+$batchNumber = 0
+
+Write-Log "Starting file enumeration..."
+
+# Use robocopy-style enumeration for better performance on large directories
+$files = @()
+$fileBuffer = New-Object System.Collections.ArrayList
+
+try {
+    # Enumerate files using .NET for better performance
+    $dirInfo = New-Object System.IO.DirectoryInfo($TargetPath)
+    
+    Write-Log "Enumerating files (this may take several minutes)..."
+    
+    foreach ($file in $dirInfo.EnumerateFiles("*", [System.IO.SearchOption]::AllDirectories)) {
+        $totalProcessed++
+        
+        if ($file.LastWriteTime -lt $cutoffDate) {
+            [void]$fileBuffer.Add($file.FullName)
+            
+            # Process in batches
+            if ($fileBuffer.Count -ge $BatchSize) {
+                $batchNumber++
+                Write-Log "Processing batch $batchNumber ($($fileBuffer.Count) files)..."
+                
+                # Delete files in parallel using runspaces for efficiency
+                $fileBuffer | ForEach-Object -ThrottleLimit $ThrottleLimit -Parallel {
+                    try {
+                        if ($using:WhatIf) {
+                            Write-Verbose "WhatIf: Would delete $_"
+                        } else {
+                            Remove-Item -Path $_ -Force -ErrorAction Stop
+                        }
+                    } catch {
+                        Write-Error "Failed to delete ${_}: $($_.Exception.Message)"
+                    }
+                }
+                
+                $totalDeleted += $fileBuffer.Count
+                $fileBuffer.Clear()
+                
+                Write-Log "Batch $batchNumber complete. Total deleted so far: $totalDeleted"
+                Write-Log "Total files scanned: $totalProcessed"
+                
+                # Throttle between batches to reduce resource usage
+                Start-Sleep -Seconds $DelayBetweenBatches
+            }
+        }
+        
+        # Progress indicator every 50,000 files
+        if ($totalProcessed % 50000 -eq 0) {
+            Write-Log "Progress: $totalProcessed files scanned, $totalDeleted marked for deletion"
+        }
+    }
+    
+    # Process remaining files
+    if ($fileBuffer.Count -gt 0) {
+        $batchNumber++
+        Write-Log "Processing final batch ($($fileBuffer.Count) files)..."
+        
+        $fileBuffer | ForEach-Object -ThrottleLimit $ThrottleLimit -Parallel {
+            try {
+                if ($using:WhatIf) {
+                    Write-Verbose "WhatIf: Would delete $_"
+                } else {
+                    Remove-Item -Path $_ -Force -ErrorAction Stop
+                }
+            } catch {
+                Write-Error "Failed to delete ${_}: $($_.Exception.Message)"
+            }
+        }
+        
+        $totalDeleted += $fileBuffer.Count
+    }
+    
+} catch {
+    Write-Log "ERROR: $($_.Exception.Message)"
+    $totalErrors++
+}
+
+Write-Log "=== Cleanup Complete ==="
+Write-Log "Total files scanned: $totalProcessed"
+Write-Log "Total files deleted: $totalDeleted"
+Write-Log "Total errors: $totalErrors"
+Write-Log "Log file: $logPath"
+
+# Return summary object
+[PSCustomObject]@{
+    TotalScanned = $totalProcessed
+    TotalDeleted = $totalDeleted
+    TotalErrors = $totalErrors
+    LogPath = $logPath
+}
