@@ -1,0 +1,184 @@
+<#
+.SYNOPSIS
+    Checks the Windows Update policy value "DoNotConnectToWindowsUpdateInternetLocations" 
+    on remote computers (HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate).
+
+.DESCRIPTION
+    Queries the specified registry value to determine if Windows Update is blocked from 
+    connecting to Microsoft internet locations (commonly used in WSUS-only environments).
+
+    Returns: 
+    - Value (0, 1, or Absent)
+    - Interpreted Status message
+
+.PARAMETER ComputerName
+    One or more computer names to check. Accepts pipeline input.
+
+.PARAMETER Credential
+    Optional PSCredential for remote PowerShell/remoting authentication.
+
+.PARAMETER Path
+    Optional path to CSV file containing computer names 
+    (looks for columns: Device, ComputerName, Hostname, Name, Computer).
+
+.EXAMPLE
+    # Check specific computers
+    .\Get-WindowsUpdateInternetBlock.ps1 -ComputerName JPVVAOPSM008,JPVVAOPSM009 -Credential $cred
+
+.EXAMPLE
+    # Pipe from list or another command
+    Get-Content servers.txt | .\Get-WindowsUpdateInternetBlock.ps1
+
+.EXAMPLE
+    # Use CSV file
+    .\Get-WindowsUpdateInternetBlock.ps1 -Path "C:\nonprod_hosts.csv"
+
+.EXAMPLE
+    # Show help / usage
+    Get-Help .\Get-WindowsUpdateInternetBlock.ps1 -Full
+
+.EXAMPLE
+    # Run with no arguments → shows quick usage
+    .\Get-WindowsUpdateInternetBlock.ps1
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $false, ValueFromPipeline = $true, Position = 0)]
+    [Alias("Computer", "Name", "HostName", "Server")]
+    [string[]] $ComputerName,
+
+    [Parameter(Mandatory = $false)]
+    [PSCredential] $Credential,
+
+    [Parameter(Mandatory = $false)]
+    [string] $Path
+)
+
+begin {
+    # ──────────────────────────────────────────────────────────────
+    # Show friendly usage when script is run with no arguments
+    # ──────────────────────────────────────────────────────────────
+    if ($PSBoundParameters.Count -eq 0 -and $MyInvocation.Line -notmatch ' -') {
+        Write-Host "`nGet-WindowsUpdateInternetBlock - Check if WSUS-only mode is enforced (blocks Windows Update internet access)`n" -ForegroundColor Cyan
+        
+        Write-Host "Quick usage examples:" -ForegroundColor Yellow
+        Write-Host "  .\Get-WindowsUpdateInternetBlock.ps1 -ComputerName JPVVAOPSM008             " -ForegroundColor White
+        Write-Host "  .\Get-WindowsUpdateInternetBlock.ps1 -Path C:\nonprod_hosts.csv             " -ForegroundColor White
+        Write-Host "  'JPVVAOPSM001','JPVVAOPSM002' | .\Get-WindowsUpdateInternetBlock.ps1       " -ForegroundColor White
+        Write-Host "  Get-Help .\Get-WindowsUpdateInternetBlock.ps1 -Full                        " -ForegroundColor White
+        Write-Host "`nFor full parameter details, run:" -ForegroundColor Gray
+        Write-Host "  Get-Help .\Get-WindowsUpdateInternetBlock.ps1 -Full`n" -ForegroundColor Gray
+        
+        return
+    }
+
+    $allComputers = [System.Collections.Generic.List[string]]::new()
+
+    # ── Load from CSV if provided ────────────────────────────────────
+    if ($Path -and (Test-Path $Path -PathType Leaf)) {
+        Write-Verbose "Reading computers from CSV: $Path"
+        $csv = Import-Csv -Path $Path -ErrorAction SilentlyContinue
+        
+        $possibleColumns = @('Device', 'ComputerName', 'Hostname', 'Name', 'Computer', 'Server')
+        $foundColumn = $possibleColumns | Where-Object { $csv[0].PSObject.Properties.Name -contains $_ } | Select-Object -First 1
+        
+        if ($foundColumn) {
+            $allComputers.AddRange(($csv | Select-Object -ExpandProperty $foundColumn -ErrorAction SilentlyContinue))
+        }
+        else {
+            Write-Warning "CSV has no recognizable computer column (tried: $($possibleColumns -join ', '))"
+        }
+    }
+
+    # ── Add from parameter / pipeline ────────────────────────────────
+    if ($ComputerName) {
+        $allComputers.AddRange($ComputerName)
+    }
+
+    # Clean list: trim, remove empty, deduplicate
+    $allComputers = $allComputers |
+        Where-Object { $_ -and $_.Trim() } |
+        Sort-Object -Unique
+
+    if ($allComputers.Count -eq 0) {
+        Write-Error "No valid computer names provided (via parameter, pipeline, or CSV)."
+        return
+    }
+
+    Write-Verbose "Checking $($allComputers.Count) computer(s)"
+    
+    $results = [System.Collections.Generic.List[PSObject]]::new()
+}
+
+process {
+    foreach ($computer in $allComputers) {
+        Write-Verbose "Checking: $computer"
+
+        try {
+            $invokeParams = @{
+                ComputerName = $computer
+                ScriptBlock  = {
+                    $keyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+                    $val = Get-ItemProperty -Path $keyPath -Name "DoNotConnectToWindowsUpdateInternetLocations" -ErrorAction SilentlyContinue
+                    
+                    [PSCustomObject]@{
+                        Computer = $env:COMPUTERNAME
+                        Value    = if ($val) { $val.DoNotConnectToWindowsUpdateInternetLocations } else { "Absent" }
+                        Status   = if ($val -and $val.DoNotConnectToWindowsUpdateInternetLocations -eq 1) { "Enabled (blocks internet)" }
+                                   elseif ($val -and $val.DoNotConnectToWindowsUpdateInternetLocations -eq 0) { "Explicitly Disabled" }
+                                   else { "Not Configured / Not Applied" }
+                    }
+                }
+                ErrorAction  = 'Stop'
+            }
+
+            if ($Credential) {
+                $invokeParams.Credential = $Credential
+            }
+
+            $result = Invoke-Command @invokeParams
+
+            $null = $results.Add($result)
+        }
+        catch {
+            Write-Warning "Failed to query $computer : $($_.Exception.Message)"
+            
+            # Still add a failure row so we see it clearly
+            $null = $results.Add([PSCustomObject]@{
+                Computer = $computer
+                Value    = "ERROR"
+                Status   = "Failed to connect - $($_.Exception.Message)"
+            })
+        }
+    }
+}
+
+end {
+    if ($results.Count -eq 0) {
+        Write-Host "No results collected." -ForegroundColor DarkGray
+        return
+    }
+
+    # ── Console output ───────────────────────────────────────────────
+    Write-Host "`nWindows Update Internet Locations Policy Check`n" -ForegroundColor Cyan
+    
+    $results | 
+        Select-Object Computer, Value, Status | 
+        Format-Table -AutoSize
+
+    # Optional: color-code the status for quick scanning
+    $results | ForEach-Object {
+        if ($_.Status -like "*blocks internet*") {
+            Write-Host "$($_.Computer): $($_.Status)" -ForegroundColor Green
+        }
+        elseif ($_.Status -like "*ERROR*") {
+            Write-Host "$($_.Computer): $($_.Status)" -ForegroundColor Red
+        }
+    }
+
+    Write-Host "`nTotal computers checked: $($results.Count)" -ForegroundColor Gray
+
+    # Uncomment to export:
+    # $results | Export-Csv -Path "WindowsUpdate_InternetBlock_Check_$(Get-Date -Format yyyyMMdd-HHmm).csv" -NoTypeInformation -Encoding UTF8
+}
